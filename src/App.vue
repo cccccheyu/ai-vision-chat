@@ -20,7 +20,7 @@
 
     <div class="main">
       <div class="camera-panel">
-        <video v-show="cameraActive" ref="videoEl" autoplay playsinline muted></video>
+        <video v-show="cameraActive" ref="videoRef" autoplay playsinline muted></video>
         <div v-if="!cameraActive" class="placeholder">点击「开启摄像头」开始</div>
         <div v-if="cameraError" class="error-msg">{{ cameraError }}</div>
       </div>
@@ -42,29 +42,65 @@
         </div>
       </div>
     </div>
+
+    <!-- 首次使用引导 -->
+    <div v-if="showOnboarding" class="onboarding-overlay">
+      <div class="onboarding-card">
+        <h2>欢迎使用 AI 视觉对话助手</h2>
+        <p class="onboarding-subtitle">3 步快速上手</p>
+        <div class="onboarding-steps">
+          <div class="onboarding-step">
+            <div class="step-icon">📷</div>
+            <div class="step-text">
+              <div class="step-title">开启摄像头</div>
+              <div class="step-desc">点击「开启摄像头」授权设备访问</div>
+            </div>
+          </div>
+          <div class="onboarding-step">
+            <div class="step-icon">💬</div>
+            <div class="step-text">
+              <div class="step-title">提问或说话</div>
+              <div class="step-desc">输入文字或点击麦克风语音提问</div>
+            </div>
+          </div>
+          <div class="onboarding-step">
+            <div class="step-icon">🤖</div>
+            <div class="step-text">
+              <div class="step-title">AI 实时回答</div>
+              <div class="step-desc">AI 将分析画面内容并语音回复你</div>
+            </div>
+          </div>
+        </div>
+        <button class="btn btn-primary onboarding-btn" @click="closeOnboarding">开始体验</button>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, nextTick, onMounted } from 'vue'
+import { ref, reactive, nextTick, onMounted, onUnmounted } from 'vue'
 import { useCamera } from './composables/useCamera.js'
 import { useVoice } from './composables/useVoice.js'
 import { useVision } from './composables/useVision.js'
 
 const {
-  videoRef: videoEl, error: cameraError,
+  videoRef, error: cameraError,
   isActive: cameraActive, start: startCamera, stop: stopCamera, captureFrame
 } = useCamera()
 const { isListening: listening, startListen, stopListen, speak } = useVoice()
 const { messages: msgs, isLoading: loading, config, saveConfig, chat } = useVision()
 
-onMounted(() => {
-  videoEl.value = document.querySelector('video')
-})
-
 const showConfig = ref(false)
 const inputText = ref('')
 const msgBox = ref(null)
+
+// 首次使用引导
+const showOnboarding = ref(!localStorage.getItem('vision-chat-onboarded'))
+function closeOnboarding() {
+  localStorage.setItem('vision-chat-onboarded', '1')
+  showOnboarding.value = false
+  if (!cameraActive.value) toggleCamera()
+}
 
 const cfg = reactive({ ...config.value })
 function saveCfg() {
@@ -79,14 +115,34 @@ async function toggleCamera() {
     try {
       const s = await startCamera()
       await nextTick()
-      if (videoEl.value) videoEl.value.srcObject = s
-    } catch {}
+      if (videoRef.value) videoRef.value.srcObject = s
+    } catch (e) {
+      // cameraError 已在 useCamera 中设置，这里不再空 catch
+    }
   }
+}
+
+// 抽取公共聊天方法
+async function doChat(frame, text) {
+  try {
+    const reply = await chat(frame, text)
+    await speak(reply)
+  } catch (e) {
+    if (e.message === '请先配置 API Key') {
+      msgs.value.push({ role: 'assistant', content: '请先配置 API Key，点击右上角「设置 API」添加' })
+      showConfig.value = true
+    } else {
+      msgs.value.push({ role: 'assistant', content: `错误: ${e.message}` })
+    }
+  }
+  scrollDown()
 }
 
 function scrollDown() {
   nextTick(() => {
-    if (msgBox.value) msgBox.value.scrollTop = msgBox.value.scrollHeight
+    if (msgBox.value) {
+      msgBox.value.scrollTo({ top: msgBox.value.scrollHeight, behavior: 'smooth' })
+    }
   })
 }
 
@@ -95,13 +151,7 @@ async function sendText() {
   if (!text || loading.value) return
   inputText.value = ''
   const frame = cameraActive.value ? captureFrame() : null
-  try {
-    const reply = await chat(frame, text)
-    await speak(reply)
-  } catch (e) {
-    msgs.value.push({ role: 'assistant', content: `错误: ${e.message}` })
-  }
-  scrollDown()
+  await doChat(frame, text)
 }
 
 async function handleMic() {
@@ -109,13 +159,24 @@ async function handleMic() {
   try {
     const text = await startListen()
     const frame = cameraActive.value ? captureFrame() : null
-    const reply = await chat(frame, text)
-    await speak(reply)
+    await doChat(frame, text)
   } catch (e) {
-    if (e?.message !== 'aborted') msgs.value.push({ role: 'assistant', content: `语音错误: ${e.message || e}` })
+    if (e?.message !== 'aborted') {
+      msgs.value.push({ role: 'assistant', content: `语音错误: ${e.message || e}` })
+      scrollDown()
+    }
   }
-  scrollDown()
 }
+
+// beforeunload 提示：摄像头正在使用时页面关闭前提醒
+function onBeforeUnload(e) {
+  if (cameraActive.value) {
+    e.preventDefault()
+    e.returnValue = ''
+  }
+}
+onMounted(() => window.addEventListener('beforeunload', onBeforeUnload))
+onUnmounted(() => window.removeEventListener('beforeunload', onBeforeUnload))
 </script>
 
 <style>
@@ -124,7 +185,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 #app { height: 100%; }
 .app { display: flex; flex-direction: column; height: 100%; }
 .header { display: flex; align-items: center; justify-content: space-between; padding: 12px 20px; background: #1a1a1a; border-bottom: 1px solid #333; }
-.header h1 { font-size: 18px; font-weight: 600; }
+.header h1 { font-size: 18px; font-weight: 600; color: #eee; }
 .controls { display: flex; gap: 8px; }
 .btn { padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; transition: .2s; }
 .btn-primary { background: #6366f1; color: #fff; }
@@ -155,4 +216,26 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 .input-bar { display: flex; gap: 8px; padding: 12px; border-top: 1px solid #333; }
 .input-bar input { flex: 1; padding: 10px 14px; border: 1px solid #444; border-radius: 8px; background: #2a2a2a; color: #eee; font-size: 14px; outline: none; }
 .input-bar input:focus { border-color: #6366f1; }
+
+/* 首次使用引导 */
+.onboarding-overlay {
+  position: fixed; inset: 0; z-index: 1000;
+  background: rgba(0, 0, 0, 0.75);
+  display: flex; align-items: center; justify-content: center;
+  animation: onboardFadeIn 0.3s ease;
+}
+@keyframes onboardFadeIn { from { opacity: 0; } to { opacity: 1; } }
+.onboarding-card {
+  background: #1e1e1e; border: 1px solid #333; border-radius: 12px;
+  padding: 32px 28px; max-width: 420px; width: 90%;
+  text-align: center;
+}
+.onboarding-card h2 { font-size: 20px; font-weight: 600; margin-bottom: 6px; color: #eee; }
+.onboarding-subtitle { font-size: 13px; color: #888; margin-bottom: 24px; }
+.onboarding-steps { display: flex; flex-direction: column; gap: 16px; margin-bottom: 24px; text-align: left; }
+.onboarding-step { display: flex; align-items: flex-start; gap: 12px; }
+.step-icon { font-size: 28px; line-height: 1; flex-shrink: 0; }
+.step-title { font-size: 14px; font-weight: 600; margin-bottom: 2px; color: #eee; }
+.step-desc { font-size: 12px; color: #999; }
+.onboarding-btn { width: 100%; padding: 12px; font-size: 15px; }
 </style>
