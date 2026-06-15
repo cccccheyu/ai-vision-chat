@@ -3,7 +3,7 @@ import { ref } from 'vue'
 export function useVision() {
   const messages = ref([])
   const isLoading = ref(false)
-  const config = ref({ apiKey: '', baseURL: 'https://api.openai.com/v1', model: 'gpt-4o' })
+  const config = ref({ apiKey: '', baseURL: 'https://open.bigmodel.cn/api/paas/v4/', model: 'glm-4v-flash' })
 
   function loadConfig() {
     const saved = localStorage.getItem('vision-chat-config')
