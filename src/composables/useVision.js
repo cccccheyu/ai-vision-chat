@@ -37,7 +37,7 @@ export function useVision() {
     }
     content.push({
       type: 'text',
-      text: userText || '请描述你在这张图片中看到了什么，用中文简短回复'
+      text: userText || '请仔细观察这张画面的内容，用1-3句话简短描述你实际看到的东西（物体、文字、场景等）。如果画面中没有明显内容，直接说"画面中没有识别到明显内容"。不要做无关的科普或推断。'
     })
 
     messages.value.push({ role: 'user', content: userText || '（语音输入）' })
@@ -62,8 +62,11 @@ export function useVision() {
         },
         body: JSON.stringify({
           model: config.value.model,
-          messages: [{ role: 'user', content }],
-          max_tokens: 500
+          messages: [
+            { role: 'system', content: '你是一个视觉助手。只根据用户提供的图片内容回答，用1-3句简短中文描述画面中的物体、文字或场景。不要做任何与画面无关的科普、推断或展开。如果画面内容模糊或无法识别，直接说明无法识别。' },
+            { role: 'user', content }
+          ],
+          max_tokens: 300
         }),
         signal: abortController.signal
       })

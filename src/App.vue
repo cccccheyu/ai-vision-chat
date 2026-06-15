@@ -34,8 +34,8 @@
           <div v-if="loading" class="msg assistant"><div class="role-tag">AI</div><div class="msg-text typing">思考中...</div></div>
         </div>
         <div class="input-bar">
-          <button class="btn btn-mic" :class="{ active: listening }" @click="handleMic" :disabled="loading">
-            {{ listening ? '● 录音中' : '🎤' }}
+          <button class="btn btn-mic" :class="{ active: listening }" @click="handleMic" :disabled="loading || !voiceSupported" :title="voiceSupported ? '点击录音' : '当前浏览器不支持语音识别'">
+            {{ listening ? '● 录音中' : voiceSupported ? '🎤' : '🚫' }}
           </button>
           <input v-model="inputText" @keydown.enter="sendText" placeholder="输入问题，或按麦克风说话..." :disabled="loading" />
           <button class="btn btn-send" @click="sendText" :disabled="loading || !inputText.trim()">发送</button>
@@ -87,7 +87,7 @@ const {
   videoRef, error: cameraError,
   isActive: cameraActive, start: startCamera, stop: stopCamera, captureFrame
 } = useCamera()
-const { isListening: listening, startListen, stopListen, speak } = useVoice()
+const { isListening: listening, isSupported: voiceSupported, startListen, stopListen, speak } = useVoice()
 const { messages: msgs, isLoading: loading, config, saveConfig, chat } = useVision()
 
 const showConfig = ref(false)
@@ -156,6 +156,11 @@ async function sendText() {
 
 async function handleMic() {
   if (listening.value) { stopListen(); return }
+  if (!voiceSupported) {
+    msgs.value.push({ role: 'assistant', content: '当前浏览器不支持语音识别，请使用 Chrome 或 Edge，或直接输入文字提问' })
+    scrollDown()
+    return
+  }
   try {
     const text = await startListen()
     const frame = cameraActive.value ? captureFrame() : null

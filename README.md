@@ -4,7 +4,7 @@
 
 ## Demo 视频
 
-> [点击观看 Demo 视频](https://www.bilibili.com/video/BV1WCJg6pEcJ/)
+> [点击观看 Demo 视频](https://www.bilibili.com/video/BV1XHJg6qEQU/)
 
 ## 功能特性
 

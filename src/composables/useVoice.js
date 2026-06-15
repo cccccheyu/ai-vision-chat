@@ -40,7 +40,15 @@ export function useVoice() {
       }, 15000)
 
       isListening.value = true
-      recognition.start()
+      try {
+        recognition.start()
+      } catch (e) {
+        settled = true
+        clearTimeout(timeoutId)
+        isListening.value = false
+        reject(new Error('语音识别启动失败，请刷新页面重试'))
+        return
+      }
 
       recognition.onresult = (e) => {
         if (settled) return
@@ -73,6 +81,10 @@ export function useVoice() {
       recognition.onend = () => {
         clearTimeout(timeoutId)
         isListening.value = false
+        if (!settled) {
+          settled = true
+          reject(new Error('未检测到语音输入，请重试'))
+        }
       }
     })
   }
